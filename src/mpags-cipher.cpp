@@ -4,12 +4,16 @@
 #include "PlayfairCipher.hpp"
 #include "ProcessCommandLine.hpp"
 #include "TransformChar.hpp"
+#include "VigenereCipher.hpp"
+#include "CipherFactory.hpp"
+#include "Cipher.hpp"
 
 #include <cctype>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
+#include <memory>
 
 int main(int argc, char* argv[])
 {
@@ -17,7 +21,7 @@ int main(int argc, char* argv[])
     const std::vector<std::string> cmdLineArgs{argv, argv + argc};
 
     // Options that might be set by the command-line arguments
-    ProgramSettings settings{false, false, "", "", {}, {}, CipherMode::Encrypt};
+    ProgramSettings settings{false, false, "", "", {}, {}, CipherMode::Encrypt, {1} };
 
     // Process command line arguments
     const bool cmdLineStatus{processCommandLine(cmdLineArgs, settings)};
@@ -48,6 +52,10 @@ int main(int argc, char* argv[])
             << "                   A null key, i.e. no encryption, is used if not supplied\n\n"
             << "  --encrypt        Will use the cipher to encrypt the input text (default behaviour)\n\n"
             << "  --decrypt        Will use the cipher to decrypt the input text\n\n"
+            << "  --multi-cipher   Requires number of ciphers wanting to be ran on in sequence e.g. 1, 2, 3\n"
+            << "                   Then followed by standard -c cipher and -k key for each type\n"
+            << "                   When using playfair cipher, make sure to reverse the order you used\n"
+            << "                   it when decrypting e.g. if encrypted first, decrypt last\n\n"
             << std::endl;
         // Help requires no further action, so return from main
         // with 0 used to indicate success
@@ -88,23 +96,18 @@ int main(int argc, char* argv[])
             inputText += transformChar(inputChar);
         }
     }
-
-    std::string outputText;
-
-    switch (settings.cipherType[0]) {
-        case CipherType::Caesar: {
-            // Run the Caesar cipher (using the specified key and encrypt/decrypt flag) on the input text
-            CaesarCipher cipher{settings.cipherKey[0]};
-            outputText = cipher.applyCipher(inputText, settings.cipherMode);
-            break;
-        }
-        case CipherType::Playfair: {
-            PlayfairCipher cipher{settings.cipherKey[0]};
-            outputText = cipher.applyCipher(inputText, settings.cipherMode);
-            break;
-        }
+    
+     std::vector<std::unique_ptr<Cipher>> ciphers;     // Store cipher instances
+    for (std::size_t i = 0; i < settings.nExpectedCiphers; ++i) {
+        ciphers.push_back(CipherFactory::makeCipher(settings.cipherType[i], settings.cipherKey[i]));   // Use cipher factory to make each cipher from cmdline
     }
 
+    // Loop through the collection of ciphers
+    std::string outputText = inputText;
+    for (const auto& cipher : ciphers) {
+        outputText = cipher->applyCipher(outputText, settings.cipherMode);   // Apply cipher for each cipher method
+    }
+    
     // Output the encrypted/decrypted text to stdout/file
     if (!settings.outputFile.empty()) {
         // Open the file and check that we can write to it
